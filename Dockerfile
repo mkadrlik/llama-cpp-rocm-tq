@@ -14,6 +14,7 @@ RUN apt-get update && apt-get install -y \
     cmake \
     git \
     build-essential \
+    pkg-config \
     libopenblas-dev \
     && rm -rf /var/lib/apt/lists/*
 
@@ -57,7 +58,7 @@ COPY --from=builder /opt/llama.cpp/build/bin/llama-quantize /usr/local/bin/
 COPY --from=builder /opt/llama.cpp/build/bin/libggml*.so* /usr/local/lib/
 COPY --from=builder /opt/llama.cpp/build/bin/libllama.so* /usr/local/lib/
 
-ENV LD_LIBRARY_PATH=/usr/local/lib:${LD_LIBRARY_PATH:-}
+ENV LD_LIBRARY_PATH=/usr/local/lib
 
 # Default: serve with TurboQuant 3-bit KV cache (recommended)
 ENTRYPOINT ["llama-server"]
