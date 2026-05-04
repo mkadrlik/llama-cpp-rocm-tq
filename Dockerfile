@@ -7,14 +7,17 @@
 
 FROM rocm/dev-ubuntu-22.04 AS builder
 
-# Build dependencies
-# NOTE: No NCCL — ROCm uses RCCL which is bundled in the dev image,
-# not a separate apt package. GGML_NCCL is NVIDIA-only.
-RUN apt-get update && apt-get install -y \
+# Add ROCm apt repo and install build dependencies
+# NOTE: rocm/dev-ubuntu-22.04 is minimal — hipblas/rocblas not pre-installed
+RUN apt-key adv --keyserver keyserver.ubuntu.com --recv-key A4B66980804F5FEC7F47D2D7923239DC890C4EA3 && \
+    echo "deb https://repo.radeon.com/rocm/apt/6.2 jammy main" > /etc/apt/sources.list.d/rocm.list && \
+    apt-get update && apt-get install -y \
     cmake \
     git \
     build-essential \
     pkg-config \
+    hipblas-dev \
+    rocblas-dev \
     libopenblas-dev \
     && rm -rf /var/lib/apt/lists/*
 
@@ -47,8 +50,12 @@ RUN HIPCXX="$(hipconfig -l)/clang" \
 ###############################################################################
 FROM rocm/dev-ubuntu-22.04
 
-# Runtime dependencies
-RUN apt-get update && apt-get install -y \
+# Add ROCm apt repo and install runtime dependencies
+RUN apt-key adv --keyserver keyserver.ubuntu.com --recv-key A4B66980804F5FEC7F47D2D7923239DC890C4EA3 && \
+    echo "deb https://repo.radeon.com/rocm/apt/6.2 jammy main" > /etc/apt/sources.list.d/rocm.list && \
+    apt-get update && apt-get install -y \
+    hipblas \
+    rocblas \
     libopenblas0-pthread \
     && rm -rf /var/lib/apt/lists/*
 
