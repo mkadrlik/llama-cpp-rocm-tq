@@ -1,26 +1,15 @@
-name: Mirror to GitHub
-on:
-  push:
-    branches: [ main ]
-  schedule:
-    - cron: '0 */6 * * *'
+# This workflow has been replaced by build-and-push.yml
+# The mirror step is now included as a job in build-and-push.yml
+# This file is kept for reference only and can be safely deleted.
 
-# Required repository secrets:
-#   GITHUB_TOKEN  — GitHub personal access token with repo scope
+name: Mirror to GitHub (DEPRECATED)
+on:
+  # Disabled - use build-and-push.yml instead
+  workflow_dispatch:
 
 jobs:
-  mirror:
+  notice:
     runs-on: [self-hosted, rocm]
     steps:
-      - name: Cleanup
-        run: rm -rf /tmp/llama-cpp-rocm-tq-mirror
-
-      - name: Checkout
-        run: |
-          git clone "${{ vars.GITEA_URL }}/mkadrlik/llama-cpp-rocm-tq.git" /tmp/llama-cpp-rocm-tq-mirror
-
-      - name: Push to GitHub
-        run: |
-          cd /tmp/llama-cpp-rocm-tq-mirror
-          git remote add github "https://${{ secrets.GITHUB_TOKEN }}@github.com/mkadrlik/llama-cpp-rocm-tq.git" 2>/dev/null || true
-          git push github main --tags
+      - name: Notice
+        run: echo "This workflow is deprecated. Use build-and-push.yml instead."

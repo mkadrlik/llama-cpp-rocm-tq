@@ -1,0 +1,26 @@
+services:
+  llama-server:
+    image: ${IMAGE_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}
+    container_name: llama-cpp-rocm-tq
+    restart: unless-stopped
+    devices:
+      - /dev/kfd:/dev/kfd
+      - /dev/dri:/dev/dri
+    security_opt:
+      - seccomp=unconfined
+    environment:
+      - HSA_OVERRIDE_GFX_VERSION=${HSA_OVERRIDE_GFX_VERSION}
+    ports:
+      - "${SERVER_PORT}:8080"
+    volumes:
+      - "${MODEL_PATH}:${MODEL_MOUNT}:ro"
+    command: >
+      --host ${SERVER_HOST}
+      --port 8080
+      --model ${MODEL_MOUNT}
+      -ctk ${CACHE_TYPE_K}
+      -ctv ${CACHE_TYPE_V}
+      -ngl ${GPU_LAYERS}
+      ${THREADS:+-t ${THREADS}}
+      ${CONTEXT_SIZE:+-c ${CONTEXT_SIZE}}
+      ${EXTRA_ARGS}

@@ -58,11 +58,14 @@ RUN echo "deb [trusted=yes] https://repo.radeon.com/rocm/apt/7.2.2 jammy main" >
     libopenblas0-pthread \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy built binaries + shared libs
+# Copy built binaries + ALL shared libs (llama-server dynamically links to all of them)
 COPY --from=builder /opt/llama.cpp/build/bin/llama-server /usr/local/bin/
 COPY --from=builder /opt/llama.cpp/build/bin/llama-quantize /usr/local/bin/
+COPY --from=builder /opt/llama.cpp/build/bin/llama-bench /usr/local/bin/
+COPY --from=builder /opt/llama.cpp/build/bin/llama-perplexity /usr/local/bin/
 COPY --from=builder /opt/llama.cpp/build/bin/libggml*.so* /usr/local/lib/
-COPY --from=builder /opt/llama.cpp/build/bin/libllama.so* /usr/local/lib/
+COPY --from=builder /opt/llama.cpp/build/bin/libllama*.so* /usr/local/lib/
+COPY --from=builder /opt/llama.cpp/build/bin/libmtmd*.so* /usr/local/lib/
 
 ENV LD_LIBRARY_PATH=/usr/local/lib
 

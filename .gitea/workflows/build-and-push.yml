@@ -1,0 +1,152 @@
+name: Build and Push Docker Image
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      force_rebuild:
+        description: 'Force rebuild even if image exists'
+        required: false
+        type: boolean
+        default: false
+  schedule:
+    # Check daily for upstream updates
+    - cron: '0 6 * * *'
+
+env:
+  REGISTRY: 192.168.50.11:5000
+  GHCR_REGISTRY: ghcr.io
+  IMAGE_NAME: mkadrlik/llama-cpp-rocm-tq
+  UPSTREAM_REPO: https://github.com/TheTom/llama-cpp-turboquant.git
+  UPSTREAM_BRANCH: feature/turboquant-kv-cache
+
+jobs:
+  check-upstream:
+    name: Check Upstream Updates
+    runs-on: [self-hosted, rocm]
+    outputs:
+      upstream_changed: ${{ steps.check.outputs.changed }}
+    steps:
+      - name: Check for upstream changes
+        id: check
+        run: |
+          # Get the commit hash embedded in our Dockerfile
+          LOCAL_HASH=$(grep -oP 'llama-cpp-turboquant\.git.*?--depth 1' Dockerfile || echo "")
+          
+          # Fetch latest upstream commit
+          UPSTREAM_HASH=$(git ls-remote "$UPSTREAM_REPO" "$UPSTREAM_BRANCH" | awk '{print $1}')
+          
+          # Check if we have a recorded upstream hash
+          if [ -f .upstream-hash ]; then
+            LAST_HASH=$(cat .upstream-hash)
+          else
+            LAST_HASH=""
+          fi
+          
+          if [ "$UPSTREAM_HASH" != "$LAST_HASH" ]; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "Upstream changed: $LAST_HASH -> $UPSTREAM_HASH"
+            echo "$UPSTREAM_HASH" > .upstream-hash
+          else
+            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "No upstream changes detected"
+          fi
+
+  build:
+    name: Build and Push Docker Image
+    runs-on: [self-hosted, rocm]
+    needs: check-upstream
+    if: >
+      github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'schedule' && needs.check-upstream.outputs.upstream_changed == 'true')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Generate version tags
+        id: version
+        run: |
+          # Short SHA (7 chars)
+          SHORT_SHA=$(git rev-parse --short=7 HEAD)
+          
+          # Date-based semver
+          DATE_VERSION=$(date +%Y.%m.%d)
+          
+          # Full version
+          VERSION="${DATE_VERSION}-${SHORT_SHA}"
+          
+          echo "short_sha=${SHORT_SHA}" >> $GITHUB_OUTPUT
+          echo "date_version=${DATE_VERSION}" >> $GITHUB_OUTPUT
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Login to local registry
+        run: |
+          # Registry is local, skip login if using insecure registry
+          echo "Using local registry ${REGISTRY}"
+
+      - name: Login to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.GHCR_REGISTRY }}
+          username: ${{ secrets.GHCR_USERNAME }}
+          password: ${{ secrets.GHCR_TOKEN }}
+
+      - name: Build and push to local registry
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.date_version }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache,mode=max
+
+      - name: Build and push to ghcr.io
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.GHCR_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}
+            ${{ env.GHCR_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.date_version }}
+            ${{ env.GHCR_REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          cache-from: type=registry,ref=${{ env.GHCR_REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache
+          cache-to: type=registry,ref=${{ env.GHCR_REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache,mode=max
+
+      - name: Update upstream hash
+        if: success()
+        run: |
+          UPSTREAM_HASH=$(git ls-remote "$UPSTREAM_REPO" "$UPSTREAM_BRANCH" | awk '{print $1}')
+          echo "$UPSTREAM_HASH" > .upstream-hash
+          git config user.name "Gitea Actions"
+          git config user.email "actions@gitea.local"
+          git add .upstream-hash
+          git commit -m "chore: update upstream hash to $UPSTREAM_HASH" || echo "No changes to commit"
+          git push origin main
+
+  mirror:
+    name: Mirror to GitHub
+    runs-on: [self-hosted, rocm]
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Push to GitHub
+        run: |
+          git remote add github "https://${{ secrets.GITHUB_TOKEN }}@github.com/mkadrlik/llama-cpp-rocm-tq.git" 2>/dev/null || true
+          git push github main --tags --force-with-lease
