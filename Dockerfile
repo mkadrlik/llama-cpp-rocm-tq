@@ -31,6 +31,7 @@ WORKDIR /opt/llama.cpp
 # (CMake's HIP language support needs to detect the ROCm Clang itself)
 RUN HIPCXX="$(hipconfig -l)/clang" \
     HIP_PATH="$(hipconfig -R)" \
+    CMAKE_PREFIX_PATH=/opt/rocm \
     cmake -B build \
         -DGGML_HIP=ON \
         -DGPU_TARGETS=gfx1100 \
