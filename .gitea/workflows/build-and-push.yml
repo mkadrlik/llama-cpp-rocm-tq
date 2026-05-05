@@ -115,6 +115,12 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Exclude .gitea from mirror
+        run: |
+          rm -rf .gitea/
+          git add -A
+          git commit --allow-empty -m "ci: exclude .gitea from GitHub mirror" || true
+
       - name: Push to GitHub
         run: |
           git remote add github "https://${{ secrets.GHCR_TOKEN }}@github.com/mkadrlik/llama-cpp-rocm-tq.git" 2>/dev/null || true

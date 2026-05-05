@@ -85,44 +85,31 @@ jobs:
           git tag -a ${{ steps.version.outputs.version }} -m "Release ${{ steps.version.outputs.version }}"
           git push origin ${{ steps.version.outputs.version }}
 
+      - name: Login to ghcr.io
+        run: echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u "${{ secrets.GHCR_USERNAME }}" --password-stdin
+
       - name: Build and push Docker image
         run: |
+          IMAGE="ghcr.io/mkadrlik/llama-cpp-rocm-tq"
           cd /tmp
           rm -rf llama-cpp-rocm-tq-build
           git clone "${{ vars.GITEAURL }}/mkadrlik/llama-cpp-rocm-tq.git" llama-cpp-rocm-tq-build
           cd llama-cpp-rocm-tq-build
 
-          docker build -t "${{ vars.REGISTRY_URL }}/lemonade-tq:${{ steps.version.outputs.version }}" .
-          docker build -t "${{ vars.REGISTRY_URL }}/lemonade-tq:${{ steps.version.outputs.short_sha }}" .
-          docker build -t "${{ vars.REGISTRY_URL }}/lemonade-tq:latest" .
+          docker build -t "${IMAGE}:${{ steps.version.outputs.version }}" .
+          docker tag "${IMAGE}:${{ steps.version.outputs.version }}" "${IMAGE}:${{ steps.version.outputs.short_sha }}"
+          docker tag "${IMAGE}:${{ steps.version.outputs.version }}" "${IMAGE}:latest"
 
-          docker push "${{ vars.REGISTRY_URL }}/lemonade-tq:${{ steps.version.outputs.version }}"
-          docker push "${{ vars.REGISTRY_URL }}/lemonade-tq:${{ steps.version.outputs.short_sha }}"
-          docker push "${{ vars.REGISTRY_URL }}/lemonade-tq:latest"
-
-      - name: Deploy to NAS
-        run: |
-          ssh -o StrictHostKeyChecking=no -i /tmp/.ssh/id_ed25519 \
-              "${{ vars.DEPLOY_USER }}@${{ vars.DEPLOY_HOST }}" -p "${{ vars.DEPLOY_SSH_PORT }}" << 'SSH_EOF'
-            cd "${DEPLOY_PATH}"
-            docker compose down
-            sed -i "s|image: .*|image: ${REGISTRY}:${TAG}|g" docker-compose.yml
-            docker compose up -d
-            sleep 30
-            if docker inspect --format='{{.State.Health.Status}}' lemonade-tq-server | grep -q healthy; then
-              echo "Deployment successful"
-            else
-              echo "Health check failed"
-              exit 1
-            fi
-          SSH_EOF
-        env:
-          TAG: ${{ steps.version.outputs.version }}
-          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
-          REGISTRY: ${{ vars.REGISTRY_URL }}/lemonade-tq
+          docker push "${IMAGE}:${{ steps.version.outputs.version }}"
+          docker push "${IMAGE}:${{ steps.version.outputs.short_sha }}"
+          docker push "${IMAGE}:latest"
 
       - name: Mirror tag to GitHub
         run: |
+          cd /tmp/llama-cpp-rocm-tq-build
+          rm -rf .gitea/
+          git add -A
+          git commit --allow-empty -m "ci: exclude .gitea from GitHub mirror" || true
           git remote remove github 2>/dev/null || true
           git remote add github "https://${{ secrets.GHCR_TOKEN }}@github.com/mkadrlik/llama-cpp-rocm-tq.git"
-          git push github ${{ steps.version.outputs.version }} --force-with-lease
+          git push github main --tags --force-with-lease
