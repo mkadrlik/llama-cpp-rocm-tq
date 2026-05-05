@@ -2,7 +2,7 @@
 
 llama.cpp with **TurboQuant** KV cache compression, built for AMD ROCm GPUs.
 
-[![Build Status](http://192.168.50.11:3042/api/repos/mkadrlik/llama-cpp-rocm-tq/actions/runs?branch=main)](http://192.168.50.11:3042/mkadrlik/llama-cpp-rocm-tq/actions)
+[![Built with ROCm](https://img.shields.io/badge/Built%20with-ROCm-ED1C24?logo=amd)](https://rocm.docs.amd.com/)
 
 ## What is TurboQuant?
 
@@ -19,13 +19,13 @@ TurboQuant compresses the KV cache using Walsh-Hadamard Transform (WHT) rotation
 ## Quick Start
 
 ```bash
-# Using pre-built image from local registry
+# Using pre-built image from ghcr.io
 docker run --rm --device /dev/kfd --device /dev/dri \
   --security-opt seccomp=unconfined \
   -e HSA_OVERRIDE_GFX_VERSION=11.0.0 \
   -p 8080:8080 \
   -v /path/to/model.gguf:/model.gguf:ro \
-  192.168.50.11:5000/mkadrlik/llama-cpp-rocm-tq:latest \
+  ghcr.io/mkadrlik/llama-cpp-rocm-tq:latest \
   --model /model.gguf -ctk turbo3 -ctv turbo3 -ngl 99
 ```
 
