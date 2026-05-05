@@ -16,6 +16,7 @@ RUN echo "deb [trusted=yes] https://repo.radeon.com/rocm/apt/7.2.2 jammy main" >
     git \
     build-essential \
     pkg-config \
+    hip-dev \
     hipblas-dev \
     rocblas-dev \
     libopenblas-dev \
@@ -29,11 +30,14 @@ WORKDIR /opt/llama.cpp
 # Build with ROCm HIP and OpenBLAS
 # Use HIPCXX/HIP_PATH env vars — do NOT override CMAKE_CXX_COMPILER
 # (CMake's HIP language support needs to detect the ROCm Clang itself)
-# Explicitly set hipblas_DIR since CMAKE_PREFIX_PATH is unreliable in Docker builds
+# hipblas-config.cmake uses find_dependency(hip) and find_dependency(hipblas-common)
+# so all three *_DIR flags must be set explicitly for cmake discovery
 RUN HIPCXX="$(hipconfig -l)/clang" \
     HIP_PATH="$(hipconfig -R)" \
     cmake -B build \
+        -Dhip_DIR=/opt/rocm/lib/cmake/hip \
         -Dhipblas_DIR=/opt/rocm/lib/cmake/hipblas \
+        -Dhipblas-common_DIR=/opt/rocm/lib/cmake/hipblas-common \
         -Drocblas_DIR=/opt/rocm/lib/cmake/rocblas \
         -DGGML_HIP=ON \
         -DGPU_TARGETS=gfx1100 \
