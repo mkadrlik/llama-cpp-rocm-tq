@@ -2,7 +2,7 @@ name: Build and Push Docker Image
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, 'fix/*' ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:
@@ -21,7 +21,6 @@ on:
 #   GHCR_TOKEN     — GitHub PAT with write:packages + repo scopes
 
 env:
-  REGISTRY: 192.168.50.11:5000
   GHCR_REGISTRY: ghcr.io
   IMAGE_NAME: mkadrlik/llama-cpp-rocm-tq
   UPSTREAM_REPO: https://github.com/TheTom/llama-cpp-turboquant.git
@@ -53,7 +52,7 @@ jobs:
             git config user.email "actions@gitea.local"
             git add .upstream-hash
             git commit -m "chore: update upstream hash to ${UPSTREAM_HASH:0:8}"
-            git push origin HEAD:main
+            git push origin HEAD
           else
             echo "changed=false" >> $GITHUB_OUTPUT
             echo "No upstream changes detected"
@@ -93,15 +92,12 @@ jobs:
           username: ${{ secrets.GHCR_USERNAME }}
           password: ${{ secrets.GHCR_TOKEN }}
 
-      - name: Build and push to both registries
+      - name: Build and push to ghcr.io
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }},
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.date_version }},
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest,
             ${{ env.GHCR_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }},
             ${{ env.GHCR_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.date_version }},
             ${{ env.GHCR_REGISTRY }}/${{ env.IMAGE_NAME }}:latest
