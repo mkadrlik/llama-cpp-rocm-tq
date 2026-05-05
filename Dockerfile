@@ -29,10 +29,12 @@ WORKDIR /opt/llama.cpp
 # Build with ROCm HIP and OpenBLAS
 # Use HIPCXX/HIP_PATH env vars — do NOT override CMAKE_CXX_COMPILER
 # (CMake's HIP language support needs to detect the ROCm Clang itself)
+# Explicitly set hipblas_DIR since CMAKE_PREFIX_PATH is unreliable in Docker builds
 RUN HIPCXX="$(hipconfig -l)/clang" \
     HIP_PATH="$(hipconfig -R)" \
-    CMAKE_PREFIX_PATH=/opt/rocm \
     cmake -B build \
+        -Dhipblas_DIR=/opt/rocm/lib/cmake/hipblas \
+        -Drocblas_DIR=/opt/rocm/lib/cmake/rocblas \
         -DGGML_HIP=ON \
         -DGPU_TARGETS=gfx1100 \
         -DGGML_BLAS=ON \
