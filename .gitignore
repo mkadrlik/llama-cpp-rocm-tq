@@ -1,3 +1,6 @@
 .env
 *.gguf
 __pycache__/
+
+# Gitea Actions (not mirrored to GitHub)
+.gitea/
