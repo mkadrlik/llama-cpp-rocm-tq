@@ -4,3 +4,4 @@ __pycache__/
 
 # Gitea Actions (not mirrored to GitHub)
 .gitea/
+!.gitea/workflows/
