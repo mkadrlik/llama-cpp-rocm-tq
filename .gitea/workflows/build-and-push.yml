@@ -123,7 +123,7 @@ jobs:
 
             - name: Push to GitHub
               run: |
-                  cd /tmp/llama-cpp-rocm-tq-mirror
+                  cd /tmp/llama-cpp-rocm-tq
                   git remote remove github 2>/dev/null || true
                   git remote add github "https://${{ secrets.GHCR_TOKEN }}@github.com/mkadrlik/llama-cpp-rocm-tq.git"
                   git fetch github main
