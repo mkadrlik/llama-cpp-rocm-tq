@@ -28,21 +28,15 @@ RUN git clone --branch feature/turboquant-kv-cache --depth 1 \
 WORKDIR /opt/llama.cpp
 
 # Build with ROCm HIP and OpenBLAS
-# Use HIPCXX/HIP_PATH env vars — do NOT override CMAKE_CXX_COMPILER
-# (CMake's HIP language support needs to detect the ROCm Clang itself)
-# hipblas-config.cmake uses find_dependency(hip) and find_dependency(hipblas-common)
-# so all three *_DIR flags must be set explicitly for cmake discovery
+# Use GGML_HIPBLAS=ON (auto-discovers hipblas/rocblas via CMAKE_PREFIX_PATH)
+# instead of hardcoding *_DIR flags which break on ROCm version bumps.
+# GPU_TARGETS defaults to "native" which auto-detects the host GPU.
 RUN HIPCXX="$(hipconfig -l)/clang" \
     HIP_PATH="$(hipconfig -R)" \
     cmake -B build \
-        -Dhip_DIR=/opt/rocm/lib/cmake/hip \
-        -Dhipblas_DIR=/opt/rocm/lib/cmake/hipblas \
-        -Dhipblas-common_DIR=/opt/rocm/lib/cmake/hipblas-common \
-        -Drocblas_DIR=/opt/rocm/lib/cmake/rocblas \
-        -DGGML_HIP=ON \
-        -DGPU_TARGETS=gfx1100 \
-        -DGGML_BLAS=ON \
-        -DGGML_BLAS_VENDOR=OpenBLAS \
+        -DGGML_HIPBLAS=ON \
+        -DHIP_PATH="$(hipconfig -R)" \
+        -DCMAKE_PREFIX_PATH="$(hipconfig -R)" \
         -DGGML_NATIVE=OFF \
         -DGGML_AVX=OFF \
         -DGGML_AVX2=OFF \
