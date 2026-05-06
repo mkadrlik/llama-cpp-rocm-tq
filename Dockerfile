@@ -5,20 +5,16 @@
 # Source: TheTom/llama-cpp-turboquant (feature/turboquant-kv-cache)
 ###############################################################################
 
-FROM rocm/dev-ubuntu-22.04 AS builder
+# Use -complete variant which includes hipblas-dev, rocblas-dev, and all CMake configs
+# Standard tag is runtime-only; -complete has full dev toolchain (~6.9 GB vs ~1.1 GB)
+FROM rocm/dev-ubuntu-24.04:7.2.3-complete AS builder
 
-# Add ROCm apt repo (trusted=yes to avoid keyserver issues in build)
-# and install build dependencies.
-# NOTE: rocm/dev-ubuntu-22.04 is minimal — hipblas/rocblas not pre-installed.
-RUN echo "deb [trusted=yes] https://repo.radeon.com/rocm/apt/7.2.2 jammy main" > /etc/apt/sources.list.d/rocm.list && \
-    apt-get update && apt-get install -y \
+# Install build dependencies (hipblas/rocblas already in -complete image)
+RUN apt-get update && apt-get install -y \
     cmake \
     git \
     build-essential \
     pkg-config \
-    hip-dev \
-    hipblas-dev \
-    rocblas-dev \
     libopenblas-dev \
     && rm -rf /var/lib/apt/lists/*
 
@@ -27,35 +23,25 @@ RUN git clone --branch feature/turboquant-kv-cache --depth 1 \
     https://github.com/TheTom/llama-cpp-turboquant.git /opt/llama.cpp
 WORKDIR /opt/llama.cpp
 
-# Build with ROCm HIP and OpenBLAS
-# Use GGML_HIPBLAS=ON (auto-discovers hipblas/rocblas via CMAKE_PREFIX_PATH)
-# instead of hardcoding *_DIR flags which break on ROCm version bumps.
+# Build with ROCm HIP backend
+# GGML_HIP=ON enables the HIP backend (required for GPU compute)
+# GGML_HIP_ROCWMMA_FATTN=ON enables rocWMMA flash attention (RDNA3 optimization)
 # GPU_TARGETS defaults to "native" which auto-detects the host GPU.
 RUN HIPCXX="$(hipconfig -l)/clang" \
     HIP_PATH="$(hipconfig -R)" \
     cmake -B build \
-        -DGGML_HIPBLAS=ON \
-        -DHIP_PATH="$(hipconfig -R)" \
-        -DCMAKE_PREFIX_PATH="$(hipconfig -R)" \
-        -DGGML_NATIVE=OFF \
-        -DGGML_AVX=OFF \
-        -DGGML_AVX2=OFF \
-        -DGGML_AVX512=OFF \
-        -DGGML_F16C=OFF \
-        -DGGML_FMA=OFF \
+        -DGGML_HIP=ON \
+        -DGGML_HIP_ROCWMMA_FATTN=ON \
         -DCMAKE_BUILD_TYPE=Release \
     && cmake --build build --config Release -j$(nproc)
 
 ###############################################################################
 # Runtime image
 ###############################################################################
-FROM rocm/dev-ubuntu-22.04
+FROM rocm/dev-ubuntu-24.04:7.2.3
 
-# Add ROCm apt repo and install runtime dependencies
-RUN echo "deb [trusted=yes] https://repo.radeon.com/rocm/apt/7.2.2 jammy main" > /etc/apt/sources.list.d/rocm.list && \
-    apt-get update && apt-get install -y \
-    hipblas \
-    rocblas \
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
     libopenblas0-pthread \
     && rm -rf /var/lib/apt/lists/*
 
