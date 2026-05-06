@@ -54,6 +54,9 @@ COPY --from=builder /opt/llama.cpp/build/bin/libggml*.so* /usr/local/lib/
 COPY --from=builder /opt/llama.cpp/build/bin/libllama*.so* /usr/local/lib/
 COPY --from=builder /opt/llama.cpp/build/bin/libmtmd*.so* /usr/local/lib/
 
+# Copy ROCm runtime libraries (hipblas, rocblas, etc.)
+COPY --from=builder /opt/rocm/lib/ /opt/rocm/lib/
+
 ENV LD_LIBRARY_PATH=/usr/local/lib
 
 # Default: serve with TurboQuant 3-bit KV cache (recommended)
