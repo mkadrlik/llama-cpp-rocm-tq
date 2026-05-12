@@ -5,3 +5,6 @@ __pycache__/
 # Gitea Actions (not mirrored to GitHub)
 .gitea/
 !.gitea/workflows/
+
+# Upstream tracking (local only, auto-generated)
+.upstream-hash
