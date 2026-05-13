@@ -18,10 +18,11 @@ RUN apt-get update && apt-get install -y \
     libopenblas-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Clone TurboQuant fork (AmesianX — source of truth, v1.7.0 latest stable)
-# This is the canonical TurboQuant implementation with TriAttention support
-RUN git clone --branch v1.7.0 --depth 1 \
-    https://github.com/AmesianX/TurboQuant.git /opt/llama.cpp
+# Clone TurboQuant fork (domvox — clean HIP/ROCm port of TurboQuant)
+# AmesianX/TurboQuant is CUDA-only; domvox/llama.cpp-turboquant-hip is the ROCm port
+# Branch: feature/turboquant-hip-port-clean (commit 6a8df6c, based on llama.cpp b8680)
+RUN git clone --branch feature/turboquant-hip-port-clean --depth 1 \
+    https://github.com/domvox/llama.cpp-turboquant-hip.git /opt/llama.cpp
 WORKDIR /opt/llama.cpp
 
 # Build with ROCm HIP backend
