@@ -47,7 +47,7 @@ docker build -t llama-cpp-rocm-tq .
 
 This project builds on the excellent work of several open source contributors:
 
-- **[TheTom/llama-cpp-turboquant](https://github.com/TheTom/llama-cpp-turboquant)** — The canonical TurboQuant fork of llama.cpp. This Docker image uses the `feature/turboquant-kv-cache` branch. All credit for TurboQuant implementation goes to TheTom.
+- **[TheTom/llama-cpp-turboquant](https://github.com/AmesianX/TurboQuant)** — The canonical TurboQuant fork of llama.cpp. This Docker image uses the `V1.7.0` tag.
 - **[ggml-org/llama.cpp](https://github.com/ggml-org/llama.cpp)** — The upstream llama.cpp project by @ggerganov and contributors.
 - **[TurboQuant Paper](https://arxiv.org/abs/2504.19874)** — The research paper describing the WHT + PolarQuant KV cache compression technique.
 - **ROCm** — AMD's open software platform for GPU computing, providing the HIP compiler and libraries used in this build.
@@ -57,13 +57,13 @@ This project builds on the excellent work of several open source contributors:
 
 This Docker image is built using a multi-stage Dockerfile:
 
-1. **Builder stage** (`rocm/dev-ubuntu-22.04`):
+1. **Builder stage** (`rocm/dev-ubuntu-24.04`):
    - Installs ROCm 7.2.2 development packages (hipblas-dev, rocblas-dev, libopenblas-dev)
-   - Clones TheTom's TurboQuant fork from `feature/turboquant-kv-cache` branch
+   - Clones AmesianX TurboQuant fork from `V1.7.0` tag
    - Configures CMake with `GGML_HIP=ON`, `GPU_TARGETS=gfx1100`, `GGML_BLAS=ON`
    - Builds with ROCm HIP compiler (detected via `hipconfig`)
 
-2. **Runtime stage** (`rocm/dev-ubuntu-22.04`):
+2. **Runtime stage** (`rocm/dev-ubuntu-24.04`):
    - Installs ROCm runtime packages (hipblas, rocblas, libopenblas0-pthread)
    - Copies built binaries (llama-server, llama-quantize, llama-bench, llama-perplexity)
    - Copies all shared libraries (libggml*, libllama*, libmtmd*)
@@ -85,7 +85,6 @@ See [benchmarks/README.md](benchmarks/README.md) for detailed benchmark results 
 ## Repository Structure
 
 - `main` — Turn-key repository, ready to use. No sensitive values.
-- `home-lab` — Environment-specific configuration (not for general use).
 
 ## License
 
