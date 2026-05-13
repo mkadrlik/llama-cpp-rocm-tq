@@ -73,4 +73,4 @@ COPY --from=builder /opt/llama.cpp/build/bin/libmtmd*.so* /usr/local/lib/
 
 # Default: serve with TurboQuant 3-bit KV cache (recommended)
 ENTRYPOINT ["llama-server"]
-CMD ["--host", "0.0.0.0", "--port", "8080", "-ctk", "turbo3", "-ctv", "turbo3"]
+CMD ["--host", "0.0.0.0", "--port", "8080"]
