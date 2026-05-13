@@ -2,7 +2,7 @@
 # llama-cpp-rocm-tq
 # ROCm build of llama.cpp with TurboQuant KV cache compression.
 #
-# Source: TheTom/llama-cpp-turboquant (feature/turboquant-kv-cache)
+# Source: AmesianX/TurboQuant (v1.7.0) — canonical TurboQuant implementation
 ###############################################################################
 
 # Use -complete variant which includes hipblas-dev, rocblas-dev, and all CMake configs
@@ -18,9 +18,10 @@ RUN apt-get update && apt-get install -y \
     libopenblas-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Clone TurboQuant fork (TheTom — canonical, actively maintained)
-RUN git clone --branch feature/turboquant-kv-cache --depth 1 \
-    https://github.com/TheTom/llama-cpp-turboquant.git /opt/llama.cpp
+# Clone TurboQuant fork (AmesianX — source of truth, v1.7.0 latest stable)
+# This is the canonical TurboQuant implementation with TriAttention support
+RUN git clone --branch v1.7.0 --depth 1 \
+    https://github.com/AmesianX/TurboQuant.git /opt/llama.cpp
 WORKDIR /opt/llama.cpp
 
 # Build with ROCm HIP backend
