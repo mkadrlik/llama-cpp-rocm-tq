@@ -1,0 +1,231 @@
+name: CI
+
+# Self-contained workflow - no external reusable workflow dependencies
+# Gitea Actions 1.26.1 cannot parse workflow_call with needs: dependencies
+
+on:
+  push:
+    branches: [main, "fix/*"]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: "SemVer bump type"
+        required: false
+        default: "auto"
+        type: choice
+        options: [auto, major, minor, patch]
+
+env:
+  IMAGE: ghcr.io/mkadrlik/llama-cpp-rocm-tq
+  UPSTREAM_REPO: https://github.com/AmesianX/TurboQuant.git
+  UPSTREAM_BRANCH: main
+
+jobs:
+  validate-commits:
+    name: Validate commit messages
+    runs-on: [self-hosted, linux]
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Check conventional commits
+        run: |
+          MSG=$(git log -1 --format="%s")
+          PATTERN='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert|merge)(\(.+\))?(!)?: .+$'
+          if ! echo "$MSG" | grep -qE "$PATTERN"; then
+            echo "::error::Invalid commit message: $MSG"
+            echo "::error::Expected format: type(scope)!: description"
+            echo "::error::Valid types: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert, merge"
+            exit 1
+          fi
+          echo "Valid commit: $MSG"
+
+  check-upstream:
+    name: Check for upstream changes
+    runs-on: [self-hosted, linux]
+    if: github.event_name == 'schedule'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compare upstream hash
+        id: check
+        run: |
+          CURRENT=$(git ls-remote "${UPSTREAM_REPO}" "${UPSTREAM_BRANCH}" | awk '{print $1}')
+          SAVED=$(cat .upstream-hash 2>/dev/null || echo "")
+          if [ "$CURRENT" != "$SAVED" ]; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "Upstream changed: ${SAVED:0:8} -> ${CURRENT:0:8}"
+            echo "$CURRENT" > .upstream-hash
+            git config user.name "Gitea Actions"
+            git config user.email "actions@gitea.local"
+            git add .upstream-hash
+            git commit -m "chore: update upstream hash to ${CURRENT:0:8}"
+            git push origin HEAD
+          else
+            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "No upstream changes detected"
+          fi
+
+  build:
+    name: Build and push Docker image
+    runs-on: [self-hosted, rocm]
+    if: >
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'schedule')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Generate version tags
+        id: tags
+        run: |
+          SHORT_SHA=$(git rev-parse --short=7 HEAD)
+          DATE_VERSION=$(date +%Y.%m.%d)
+          VERSION="${DATE_VERSION}-${SHORT_SHA}"
+          echo "short_sha=${SHORT_SHA}" >> $GITHUB_OUTPUT
+          echo "date_version=${DATE_VERSION}" >> $GITHUB_OUTPUT
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Tags: ${VERSION}, ${DATE_VERSION}, latest"
+
+      - name: Login to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ secrets.GHCR_USERNAME }}
+          password: ${{ secrets.GHCR_TOKEN }}
+
+      - name: Build and push to ghcr.io
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ steps.tags.outputs.version }}
+            ${{ env.IMAGE }}:${{ steps.tags.outputs.date_version }}
+            ${{ env.IMAGE }}:latest
+          cache-from: type=registry,ref=${{ env.IMAGE }}:buildcache
+          cache-to: type=registry,ref=${{ env.IMAGE }}:buildcache,mode=max
+
+  mirror:
+    name: Mirror to GitHub
+    runs-on: [self-hosted, linux]
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Exclude .gitea from mirror
+        run: |
+          rm -rf .gitea/
+          git add -A
+          git commit --allow-empty -m "ci: exclude .gitea from GitHub mirror" || true
+
+      - name: Push to GitHub
+        run: |
+          git remote remove github 2>/dev/null || true
+          git remote add github "https://${{ secrets.GHCR_TOKEN }}@github.com/mkadrlik/llama-cpp-rocm-tq.git"
+          git fetch github main
+          git merge --strategy=ours github/main -m "Merge GitHub changes" || true
+          git push github main --tags
+          echo "Mirrored to GitHub successfully"
+
+  semver-release:
+    name: SemVer release
+    runs-on: [self-hosted, rocm]
+    if: github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine version bump
+        id: version
+        run: |
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null | grep -oE 'v?[0-9]+\.[0-9]+\.[0-9]+' || echo "0.1.0")
+          CURRENT="${LAST_TAG#v}"
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+
+          if [ "${{ github.event.inputs.release_type }}" = "auto" ]; then
+            COMMITS=$(git log ${LAST_TAG}..HEAD --oneline 2>/dev/null || git log --oneline -50)
+            if echo "$COMMITS" | grep -qE '(feat|fix|refactor)!|BREAKING CHANGE'; then
+              BUMP="major"
+            elif echo "$COMMITS" | grep -qE '^feat:'; then
+              BUMP="minor"
+            else
+              BUMP="patch"
+            fi
+          else
+            BUMP="${{ github.event.inputs.release_type }}"
+          fi
+
+          case $BUMP in
+            major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
+            minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
+            patch) PATCH=$((PATCH + 1)) ;;
+          esac
+
+          NEW_VERSION="v${MAJOR}.${MINOR}.${PATCH}"
+          echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "bump=$BUMP" >> $GITHUB_OUTPUT
+          echo "Bumping $LAST_TAG -> $NEW_VERSION ($BUMP)"
+
+      - name: Create and push tag
+        run: |
+          git config user.name "Gitea Actions"
+          git config user.email "actions@gitea.local"
+          git tag -a ${{ steps.version.outputs.version }} -m "Release ${{ steps.version.outputs.version }}"
+          git push origin ${{ steps.version.outputs.version }}
+          echo "Tagged and pushed: ${{ steps.version.outputs.version }}"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ secrets.GHCR_USERNAME }}
+          password: ${{ secrets.GHCR_TOKEN }}
+
+      - name: Build and push release image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ steps.version.outputs.version }}
+            ${{ env.IMAGE }}:latest
+          cache-from: type=registry,ref=${{ env.IMAGE }}:buildcache
+          cache-to: type=registry,ref=${{ env.IMAGE }}:buildcache,mode=max
+
+      - name: Mirror tag to GitHub
+        if: github.ref == 'refs/heads/main'
+        run: |
+          rm -rf .gitea/
+          git add -A
+          git commit --allow-empty -m "ci: exclude .gitea from GitHub mirror" || true
+          git remote remove github 2>/dev/null || true
+          git remote add github "https://${{ secrets.GHCR_TOKEN }}@github.com/mkadrlik/llama-cpp-rocm-tq.git"
+          git fetch github main
+          git merge --strategy=ours github/main -m "Merge GitHub changes" || true
+          git push github main --tags
+          echo "Mirrored tag to GitHub: ${{ steps.version.outputs.version }}"
