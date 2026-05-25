@@ -6,46 +6,98 @@ llama.cpp with **TurboQuant** KV cache compression, built for AMD ROCm GPUs.
 
 The **long-context** backend in the lemonade-tq ecosystem. TurboQuant compresses the KV cache 5.12x (turbo3) with <1% perplexity cost, enabling context windows up to 262K tokens on consumer GPUs.
 
+## Quick Start (Clone → Validate)
+
+### Prerequisites
+
+- Docker 24.x+ with BuildKit
+- AMD GPU with ROCm support (gfx1100 = RX 7900 series)
+- `HSA_OVERRIDE_GFX_VERSION` set for your GPU architecture
+
+### Clone
+
+```bash
+# From Gitea (primary, includes CI workflows)
+git clone http://nas.kadrlik.home:3042/mkadrlik/llama-cpp-rocm-tq.git
+cd llama-cpp-rocm-tq
+
+# From GitHub (mirror, no CI workflows)
+git clone https://github.com/mkadrlik/llama-cpp-rocm-tq.git
+cd llama-cpp-rocm-tq
+```
+
+### Configure
+
+```bash
+cp .env.example .env
+# Edit .env — at minimum set MODEL_PATH to a real .gguf file
+# Example: MODEL_PATH=/home/you/models/Qwen3.6-27B-Q8_0.gguf
+```
+
+### Build
+
+```bash
+docker build -t llama-cpp-rocm-tq .
+```
+
+The build clones [TheTom/llama-cpp-turboquant](https://github.com/TheTom/llama-cpp-turboquant) (feature/turboquant-kv-cache branch) and compiles with `GGML_HIP=ON`, `GPU_TARGETS=gfx1100`, and `GGML_HIP_ROCWMMA_FATTN=ON`. Build takes 20-40 minutes depending on hardware.
+
+### Run
+
+```bash
+docker compose up -d
+```
+
+### Validate
+
+```bash
+# 1. Container is running
+docker ps --filter name=llama-cpp-rocm-tq --format "{{.Status}}"
+# Expected: "Up X minutes"
+
+# 2. Server responds
+curl -s http://localhost:8080/health | python3 -m json.tool
+# Expected: {"status": "ok"}
+
+# 3. Model loads with TurboQuant
+# Check server logs for cache type confirmation
+docker logs llama-cpp-rocm-tq 2>&1 | grep -i "cache type"
+# Expected: cache_type_k=q8_0, cache_type_v=turbo3
+
+# 4. Chat completion works
+curl -s http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model":"default","messages":[{"role":"user","content":"Say hello"}],"max_tokens":20}' | python3 -m json.tool
+# Expected: JSON response with choices[0].message.content
+
+# 5. Stop
+docker compose down
+```
+
+### Pull Pre-built Image (skip build)
+
+```bash
+docker pull ghcr.io/mkadrlik/llama-cpp-rocm-tq:latest
+# Or from Gitea Container Registry
+docker pull nas.kadrlik.home:3042/mkadrlik/llama-cpp-rocm-tq:latest
+```
+
 ## Build System
 
 Multi-stage Docker build using ROCm dev toolchain.
 
-```bash
-# Build locally
-docker build -t llama-cpp-rocm-tq .
+### Key Build Flags
 
-# Run standalone
-docker run --rm --device /dev/kfd --device /dev/dri \
-  --security-opt seccomp=unconfined \
-  -e HSA_OVERRIDE_GFX_VERSION=11.0.0 \
-  -p 8080:8080 \
-  -v /path/to/model.gguf:/model.gguf:ro \
-  llama-cpp-rocm-tq \
-  --model /model.gguf -ctk turbo3 -ctv turbo3 -ngl 99
-```
-
-## Key Files
-
-| File | Purpose |
+| Flag | Purpose |
 |------|---------|
-| `Dockerfile` | Multi-stage build: ROCm dev toolchain → build → runtime |
-| `docker-compose.yml` | Deploy with docker-compose |
-| `.env.example` | Environment variable template |
-| `benchmarks/README.md` | Performance benchmarks on 3x RX 7900 XTX |
-| `.upstream-hash` | Tracks upstream llama.cpp commit |
+| `GGML_HIP=ON` | HIP backend for GPU compute |
+| `GGML_HIP_ROCWMMA_FATTN=ON` | rocWMMA flash attention (RDNA3 optimization) |
+| `GPU_TARGETS=gfx1100` | RX 7900 series (change for other GPUs) |
+| No NCCL | ROCm doesn't package NCCL; multi-GPU uses HIP native communications |
 
-## How to Build
+### Multi-GPU Build
 
-The Dockerfile uses `rocm/dev-ubuntu-24.04:7.2.3-complete` as the builder base (includes hipblas-dev, rocblas-dev, full dev toolchain).
-
-1. **Builder stage**: Clones TheTom/llama-cpp-turboquant (feature/turboquant-kv-cache branch), builds with `GGML_HIP=ON`, `GPU_TARGETS=gfx1100`, `GGML_BLAS=ON`
-2. **Runtime stage**: Minimal ROCm runtime, copies binaries + all shared libs
-
-Key build flags:
-- `GGML_HIP=ON` — HIP backend for GPU compute
-- `GGML_HIP_ROCWMMA_FATTN=ON` — rocWMMA flash attention (RDNA3 optimization)
-- `GPU_TARGETS=gfx1100` — RX 7900 series (adjust for other GPUs)
-- No NCCL — ROCm doesn't package NCCL; multi-GPU uses HIP native communications
+For multi-GPU setups, the build disables NCCL by default. HIP native communications handles tensor splitting across GPUs. Ensure `--tensor-split` is set in your `.env` or EXTRA_ARGS.
 
 ## Performance Benchmarks
 
@@ -74,12 +126,41 @@ Tested on 3x RX 7900 XTX (73.6 GB total VRAM) with Qwen3.6-27B-GGUF (16.4 GiB):
 
 **Recommendation**: Use `--cache-type-k q8_0 --cache-type-v turbo3` — 67.5% VRAM savings with negligible quality loss.
 
+## Key Files
+
+| File | Purpose |
+|------|---------|
+| `Dockerfile` | Multi-stage build: ROCm dev toolchain → build → runtime |
+| `docker-compose.yml` | Deploy with docker-compose |
+| `.env.example` | Environment variable template |
+| `benchmarks/README.md` | Performance benchmarks on 3x RX 7900 XTX |
+| `.upstream-hash` | Tracks upstream llama.cpp commit |
+
+## Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `IMAGE_REGISTRY` | `ghcr.io` | Docker image registry |
+| `IMAGE_NAME` | `mkadrlik/llama-cpp-rocm-tq` | Image name |
+| `IMAGE_TAG` | `latest` | Image tag |
+| `MODEL_PATH` | (required) | Path to .gguf model on host |
+| `MODEL_MOUNT` | `/model.gguf` | Mount point inside container |
+| `SERVER_HOST` | `0.0.0.0` | Server bind address |
+| `SERVER_PORT` | `8080` | Host port mapping |
+| `HSA_OVERRIDE_GFX_VERSION` | `11.0.0` | ROCm GPU architecture override |
+| `CACHE_TYPE_K` | `q8_0` | Key cache type (f16, q8_0, turbo4, turbo3, turbo2) |
+| `CACHE_TYPE_V` | `turbo3` | Value cache type (f16, q8_0, turbo4, turbo3, turbo2) |
+| `GPU_LAYERS` | `99` | GPU layers to offload (-1 or 99 = all) |
+| `THREADS` | (auto) | CPU thread count |
+| `CONTEXT_SIZE` | (model default) | Context window size |
+| `EXTRA_ARGS` | (empty) | Additional llama-server arguments |
+
 ## CI/CD
 
 - Runner: `rocm/linux` (Gitea Actions)
-- Pushes to: `ghcr.io/mkadrlik/llama-cpp-rocm-tq:latest`
+- Pushes to: `ghcr.io/mkadrlik/llama-cpp-rocm-tq:latest` and `nas.kadrlik.home:3042/mkadrlik/llama-cpp-rocm-tq:latest`
 - Trigger: push to main
-- Also mirrors to GitHub
+- Also mirrors to GitHub (excludes `.gitea/` and `.upstream-hash`)
 
 ## Dependencies
 
