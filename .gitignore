@@ -8,3 +8,6 @@ __pycache__/
 
 # Upstream tracking (local only, auto-generated)
 .upstream-hash
+
+# Build artifacts (baked into Docker image, not source)
+bin/
