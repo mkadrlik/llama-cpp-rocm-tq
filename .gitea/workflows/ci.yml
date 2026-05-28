@@ -21,8 +21,9 @@ on:
 
 env:
   IMAGE: ghcr.io/mkadrlik/llama-cpp-rocm-tq
-  UPSTREAM_REPO: https://github.com/AmesianX/TurboQuant.git
-  UPSTREAM_BRANCH: main
+  # The ACTUAL upstream repo cloned by the Dockerfile
+  UPSTREAM_REPO: https://github.com/domvox/llama.cpp-turboquant-hip.git
+  UPSTREAM_BRANCH: feature/turboquant-hip-port-clean
 
 jobs:
   validate-commits:
@@ -38,7 +39,7 @@ jobs:
       - name: Check conventional commits
         run: |
           MSG=$(git log -1 --format="%s")
-          PATTERN='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert|merge)(\(.+\))?(!)?: .+$'
+          PATTERN='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert|merge)(\(.+))?(!)?: .+$'
           if ! echo "$MSG" | grep -qE "$PATTERN"; then
             echo "::error::Invalid commit message: $MSG"
             echo "::error::Expected format: type(scope)!: description"
@@ -65,20 +66,69 @@ jobs:
           if [ "$CURRENT" != "$SAVED" ]; then
             echo "changed=true" >> $GITHUB_OUTPUT
             echo "Upstream changed: ${SAVED:0:8} -> ${CURRENT:0:8}"
+            # Update .upstream-hash
             echo "$CURRENT" > .upstream-hash
+            # Pin the exact SHA in Dockerfile via UPSTREAM_SHA build arg
+            sed -i "s/^ARG UPSTREAM_SHA=.*/ARG UPSTREAM_SHA=${CURRENT}/" Dockerfile
+            # Commit both changes
             git config user.name "Gitea Actions"
             git config user.email "actions@gitea.local"
-            git add .upstream-hash
-            git commit -m "chore: update upstream hash to ${CURRENT:0:8}"
+            git add .upstream-hash Dockerfile
+            git commit -m "chore: pin upstream SHA ${CURRENT:0:8} in Dockerfile"
             git push origin HEAD
           else
             echo "changed=false" >> $GITHUB_OUTPUT
             echo "No upstream changes detected"
           fi
 
+  verify-patches:
+    name: Verify patches apply cleanly
+    runs-on: [self-hosted, linux]
+    # Run on schedule (after check-upstream updates hash) and on push to main
+    if: >
+      (github.event_name == 'schedule') ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Clone upstream at pinned SHA
+        run: |
+          SHA=$(grep '^ARG UPSTREAM_SHA=' Dockerfile | cut -d= -f2)
+          if [ -z "$SHA" ]; then
+            echo "No UPSTREAM_SHA pinned, cloning branch HEAD"
+            git clone --branch ${UPSTREAM_BRANCH} --depth 1 \
+              ${UPSTREAM_REPO} /tmp/upstream
+          else
+            echo "Cloning at pinned SHA: ${SHA:0:8}"
+            git clone ${UPSTREAM_REPO} /tmp/upstream
+            cd /tmp/upstream && git checkout "$SHA"
+          fi
+
+      - name: Verify source files exist
+        run: |
+          # Check that the files our build expects are present upstream
+          ERR=0
+          for f in src/llama-kv-cache.cpp src/llama-kv-cache.h src/llama-context.cpp src/llama-context.h; do
+            if [ ! -f "/tmp/upstream/$f" ]; then
+              echo "::error::$f not found in upstream — build will fail"
+              ERR=1
+            else
+              echo "OK: $f"
+            fi
+          done
+          if [ "$ERR" -ne 0 ]; then
+            echo "Upstream source files missing. Pin an older SHA or update the build."
+            exit 1
+          fi
+          echo "All expected source files present upstream"
+
   build:
     name: Build and push Docker image
     runs-on: [self-hosted, rocm]
+    needs: [verify-patches]
     if: >
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       (github.event_name == 'schedule')
@@ -109,17 +159,43 @@ jobs:
           username: ${{ secrets.GHCR_USERNAME }}
           password: ${{ secrets.GHCR_TOKEN }}
 
+      - name: Extract UPSTREAM_SHA for cache bust
+        id: upstream
+        run: |
+          SHA=$(grep '^ARG UPSTREAM_SHA=' Dockerfile | cut -d= -f2)
+          echo "sha=${SHA}" >> $GITHUB_OUTPUT
+          echo "Upstream SHA: ${SHA:-(unpinned, using branch HEAD)}"
+
       - name: Build and push to ghcr.io
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
+          build-args: |
+            UPSTREAM_SHA=${{ steps.upstream.outputs.sha }}
           tags: |
             ${{ env.IMAGE }}:${{ steps.tags.outputs.version }}
             ${{ env.IMAGE }}:${{ steps.tags.outputs.date_version }}
             ${{ env.IMAGE }}:latest
           cache-from: type=registry,ref=${{ env.IMAGE }}:buildcache
           cache-to: type=registry,ref=${{ env.IMAGE }}:buildcache,mode=max
+
+  push-gitea-registry:
+    name: Push to Gitea Container Registry
+    runs-on: [self-hosted, rocm]
+    needs: [build]
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Login to Gitea Container Registry
+        run: |
+          echo "${{ secrets.GITEA_REGISTRY_TOKEN }}" | \
+            docker login nas.kadrlik.home:3042 -u mkadrlik --password-stdin
+
+      - name: Tag and push
+        run: |
+          docker pull ${{ env.IMAGE }}:latest
+          docker tag ${{ env.IMAGE }}:latest nas.kadrlik.home:3042/mkadrlik/llama-cpp-rocm-tq:latest
+          docker push nas.kadrlik.home:3042/mkadrlik/llama-cpp-rocm-tq:latest
 
   mirror:
     name: Mirror to GitHub
@@ -132,19 +208,20 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Exclude .gitea from mirror
+      - name: Exclude .gitea and .upstream-hash from mirror
         run: |
           rm -rf .gitea/
+          rm -f .upstream-hash
           git add -A
-          git commit --allow-empty -m "ci: exclude .gitea from GitHub mirror" || true
+          git commit --allow-empty -m "ci: exclude .gitea and .upstream-hash from GitHub mirror" || true
 
       - name: Push to GitHub
         run: |
           git remote remove github 2>/dev/null || true
           git remote add github "https://${{ secrets.GHCR_TOKEN }}@github.com/mkadrlik/llama-cpp-rocm-tq.git"
-          git fetch github main
-          git merge --strategy=ours github/main -m "Merge GitHub changes" || true
-          git push github main --tags
+          # SUPPLY CHAIN GUARD: Force push only. Never fetch from GitHub.
+          # Gitea is source of truth. GitHub is read-only replica.
+          git push github main --force --tags
           echo "Mirrored to GitHub successfully"
 
   semver-release:
@@ -206,11 +283,19 @@ jobs:
           username: ${{ secrets.GHCR_USERNAME }}
           password: ${{ secrets.GHCR_TOKEN }}
 
+      - name: Extract UPSTREAM_SHA for cache bust
+        id: upstream
+        run: |
+          SHA=$(grep '^ARG UPSTREAM_SHA=' Dockerfile | cut -d= -f2)
+          echo "sha=${SHA}" >> $GITHUB_OUTPUT
+
       - name: Build and push release image
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
+          build-args: |
+            UPSTREAM_SHA=${{ steps.upstream.outputs.sha }}
           tags: |
             ${{ env.IMAGE }}:${{ steps.version.outputs.version }}
             ${{ env.IMAGE }}:latest
@@ -221,11 +306,12 @@ jobs:
         if: github.ref == 'refs/heads/main'
         run: |
           rm -rf .gitea/
+          rm -f .upstream-hash
           git add -A
-          git commit --allow-empty -m "ci: exclude .gitea from GitHub mirror" || true
+          git commit --allow-empty -m "ci: exclude .gitea and .upstream-hash from GitHub mirror" || true
           git remote remove github 2>/dev/null || true
           git remote add github "https://${{ secrets.GHCR_TOKEN }}@github.com/mkadrlik/llama-cpp-rocm-tq.git"
-          git fetch github main
-          git merge --strategy=ours github/main -m "Merge GitHub changes" || true
-          git push github main --tags
+          # SUPPLY CHAIN GUARD: Force push only. Never fetch from GitHub.
+          # Gitea is source of truth. GitHub is read-only replica.
+          git push github main --force --tags
           echo "Mirrored tag to GitHub: ${{ steps.version.outputs.version }}"
