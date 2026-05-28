@@ -21,9 +21,11 @@ RUN apt-get update && apt-get install -y \
 # Clone TurboQuant fork (domvox — clean HIP/ROCm port of TurboQuant)
 # AmesianX/TurboQuant is CUDA-only; domvox/llama.cpp-turboquant-hip is the ROCm port
 # Branch: feature/turboquant-hip-port-clean (commit 6a8df6c, based on llama.cpp b8680)
+ARG UPSTREAM_SHA
+
 RUN git clone --branch feature/turboquant-hip-port-clean --depth 1 \
-    https://github.com/domvox/llama.cpp-turboquant-hip.git /opt/llama.cpp
-WORKDIR /opt/llama.cpp
+    https://github.com/domvox/llama.cpp-turboquant-hip.git /opt/llama.cpp \
+    && cd /opt/llama.cpp && git checkout ${UPSTREAM_SHA}
 
 # Build with ROCm HIP backend
 # GGML_HIP=ON enables the HIP backend (required for GPU compute)
