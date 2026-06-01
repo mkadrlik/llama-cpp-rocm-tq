@@ -1,4 +1,3 @@
-# BUILT WITH ROCM 7.2.4
 ###############################################################################
 # llama-cpp-rocm-tq
 # ROCm build of llama.cpp with TurboQuant KV cache compression.
