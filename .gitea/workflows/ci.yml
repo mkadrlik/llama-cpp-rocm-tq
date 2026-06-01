@@ -39,7 +39,7 @@ jobs:
       - name: Check conventional commits
         run: |
           MSG=$(git log -1 --format="%s")
-          PATTERN='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert|merge)(\(.+))?(!)?: .+$'
+          PATTERN='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert|merge)(\(.+\))?(!)?: .+$'
           if ! echo "$MSG" | grep -qE "$PATTERN"; then
             echo "::error::Invalid commit message: $MSG"
             echo "::error::Expected format: type(scope)!: description"
@@ -97,14 +97,39 @@ jobs:
       - name: Clone upstream at pinned SHA
         run: |
           SHA=$(grep '^ARG UPSTREAM_SHA=' Dockerfile | cut -d= -f2)
+          retries=3
+          delay=5
           if [ -z "$SHA" ]; then
             echo "No UPSTREAM_SHA pinned, cloning branch HEAD"
-            git clone --branch ${UPSTREAM_BRANCH} --depth 1 \
-              ${UPSTREAM_REPO} /tmp/upstream
+            for i in $(seq 1 $retries); do
+              echo "Attempt $i/$retries..."
+              if git clone --branch ${UPSTREAM_BRANCH} --depth 1 \
+                ${UPSTREAM_REPO} /tmp/upstream 2>&1; then
+                echo "Clone succeeded"
+                break
+              fi
+              echo "Clone failed, retrying in ${delay}s..."
+              sleep $delay
+            done
+            if [ ! -d /tmp/upstream/.git ]; then
+              echo "::error::Failed to clone upstream after $retries attempts"
+              exit 1
+            fi
           else
             echo "Cloning at pinned SHA: ${SHA:0:8}"
-            git clone ${UPSTREAM_REPO} /tmp/upstream
-            cd /tmp/upstream && git checkout "$SHA"
+            for i in $(seq 1 $retries); do
+              echo "Attempt $i/$retries..."
+              if git clone ${UPSTREAM_REPO} /tmp/upstream 2>&1; then
+                cd /tmp/upstream && git checkout "$SHA"
+                break
+              fi
+              echo "Clone failed, retrying in ${delay}s..."
+              sleep $delay
+            done
+            if [ ! -d /tmp/upstream/.git ]; then
+              echo "::error::Failed to clone upstream after $retries attempts"
+              exit 1
+            fi
           fi
 
       - name: Verify source files exist
