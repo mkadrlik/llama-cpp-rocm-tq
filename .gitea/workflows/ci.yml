@@ -213,17 +213,13 @@ jobs:
     steps:
       - name: Login to Gitea Container Registry
         run: |
-          # Use existing runner credential (pre-configured in /root/.docker/config.json)
-          # Login is pre-configured on the runner infrastructure
-          echo "Gitea registry credentials pre-configured on runner"
+          echo "${{ secrets.REGISTRY_TOKEN }}" | \
+            docker login nas.kadrlik.home:3042 -u mkadrlik --password-stdin
 
       - name: Tag and push
         run: |
-          # Pull image from ghcr.io and push to Gitea registry
-          docker login ghcr.io -u ${{ secrets.GHCR_USERNAME }} --password "${{ secrets.GHCR_TOKEN }}"
           docker pull ${{ env.IMAGE }}:latest
           docker tag ${{ env.IMAGE }}:latest nas.kadrlik.home:3042/mkadrlik/llama-cpp-rocm-tq:latest
-          # Push to Gitea registry (runner has pre-configured credentials)
           docker push nas.kadrlik.home:3042/mkadrlik/llama-cpp-rocm-tq:latest
 
   mirror:
