@@ -213,7 +213,7 @@ jobs:
     steps:
       - name: Login to Gitea Container Registry
         run: |
-          echo "${{ secrets.GITEA_REGISTRY_TOKEN }}" | \
+          echo "${{ secrets.REGISTRY_TOKEN }}" | \
             docker login nas.kadrlik.home:3042 -u mkadrlik --password-stdin
 
       - name: Tag and push
