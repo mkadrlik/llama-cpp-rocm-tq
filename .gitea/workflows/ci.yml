@@ -212,8 +212,11 @@ jobs:
     if: github.ref == 'refs/heads/main'
     steps:
       - name: Login to Gitea Container Registry
-        run: |
-          docker login nas.kadrlik.home:3042 -u mkadrlik --password "${{ secrets.REGISTRY_TOKEN }}"
+        uses: docker/login-action@v3
+        with:
+          registry: nas.kadrlik.home:3042
+          username: mkadrlik
+          password: ${{ secrets.REGISTRY_TOKEN }}
 
       - name: Tag and push
         run: |
