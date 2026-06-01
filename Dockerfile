@@ -1,4 +1,5 @@
 ###############################################################################
+# ROCm 7.2.4 - HipGraphLaunch latency improvements
 # llama-cpp-rocm-tq
 # ROCm build of llama.cpp with TurboQuant KV cache compression.
 #
