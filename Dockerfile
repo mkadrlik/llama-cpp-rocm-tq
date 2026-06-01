@@ -31,7 +31,8 @@ RUN git clone --branch feature/turboquant-hip-port-clean --depth 1 \
 # GGML_HIP=ON enables the HIP backend (required for GPU compute)
 # GGML_HIP_ROCWMMA_FATTN=ON enables rocWMMA flash attention (RDNA3 optimization)
 # GPU_TARGETS defaults to "native" which auto-detects the host GPU.
-RUN cd /opt/llama.cpp && \n    HIPCXX="$(hipconfig -l)/clang" \
+RUN cd /opt/llama.cpp && \
+    HIPCXX="$(hipconfig -l)/clang" \
     HIP_PATH="$(hipconfig -R)" \
     cmake -B build \
         -DGGML_HIP=ON \
