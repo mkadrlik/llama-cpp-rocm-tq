@@ -7,7 +7,7 @@
 
 # Use -complete variant which includes hipblas-dev, rocblas-dev, and all CMake configs
 # Standard tag is runtime-only; -complete has full dev toolchain (~6.9 GB vs ~1.1 GB)
-FROM rocm/dev-ubuntu-24.04:7.2.3-complete AS builder
+FROM rocm/dev-ubuntu-24.04:7.2.4-complete AS builder
 
 # Install build dependencies (hipblas/rocblas already in -complete image)
 RUN apt-get update && apt-get install -y \
@@ -42,7 +42,7 @@ RUN HIPCXX="$(hipconfig -l)/clang" \
 ###############################################################################
 # Runtime image
 ###############################################################################
-FROM rocm/dev-ubuntu-24.04:7.2.3
+FROM rocm/dev-ubuntu-24.04:7.2.4
 
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y \
