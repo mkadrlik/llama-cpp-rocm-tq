@@ -236,8 +236,8 @@ jobs:
       - name: Tag and push
         run: |
           docker pull ${{ env.IMAGE }}:latest
-          docker tag ${{ env.IMAGE }}:latest nas.kadrlik.home:3042/mkadrlik/llama-cpp-rocm-tq:latest
-          docker push nas.kadrlik.home:3042/mkadrlik/llama-cpp-rocm-tq:latest
+          docker tag ${{ env.IMAGE }}:latest nas.kadrlik.home:3042/homelab/llama-cpp-rocm-tq:latest
+          docker push nas.kadrlik.home:3042/homelab/llama-cpp-rocm-tq:latest
 
   mirror:
     name: Mirror to GitHub
